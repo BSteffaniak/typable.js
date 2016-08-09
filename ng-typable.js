@@ -9,6 +9,7 @@
         		scope: false,
         		link: function(scope, elements, attrs) {
         			var children = elements[0].children;
+					var element = d3.select(elements[0]);
         			
         			var statements = [];
         			
@@ -108,94 +109,242 @@
         				'?':[':','"','>'],
         				'|':['}']
         			};
+					
+					var stopOnCompletion = typeof attrs.stopOnCompletion !== 'undefined';
         			
-        			for (var i = 0; i < children.length; i++) {
-        				var type = children[i].tagName.toLowerCase();
-        				
-        				if (type == "li") {
-        					d3.select(children[i]).selectAll("eval").each(function (d, i) {
-        						this.innerHTML = eval(this.innerHTML);
-        					});
-        					statements.push(children[i].textContent);
-        				}
-        			}
-        			
-        			elements[0].innerHTML = "";
-        			
-        			var text = d3.select(elements[0]).append("span");
-        			var caret = d3.select(elements[0]).append("span").classed("caret", true).html("|");
-        			
-        			if (statements.length > 0) {
-        				var i = 0;
-        				var position = 0;
-        				var statement = statements[i];
-        				var direction = 1;
-        				
-        				var letterDelay = parseFloat(attrs.delay) || 60;
-        				var pauseDelay = parseFloat(attrs.pauseDelay) || 2000;
-        				var emptyPauseDelay = parseFloat(attrs.emptyPauseDelay) || 1000;
-        				var startDelay = parseFloat(attrs.startDelay) || 0;
-        				var screwupFixDelay = parseFloat(attrs.screwupFixDelay) || 200;
-        				var screwupChance = parseFloat(attrs.screwupChance) || 20;
-        				
-        				var screwups = typeof attrs.screwups !== 'undefined';
-        				
-        				var screwupCharacter;
-        				
-        				function write(delay) {
-        					if (!screwupCharacter) {
-        						if (direction > 0) {
-        							if (screwups && Math.floor(Math.random() * screwupChance) == 0) {
-        								var characters = adjacentCharacters[statement[position]];
-        								
-        								if (characters) {
-        									screwupCharacter = characters[Math.floor(Math.random() * characters.length)];
-        									
-        									delay = screwupFixDelay;
-        								}
-        							}
-        							
-        							text.html(text.html() + (screwupCharacter || statement[position]));
-        						} else {
-        							text.html(text.html().substring(0, position));
-        						}
-        						
-        						caret.classed("active", false);
-        						
-        						if (!screwupCharacter) {
-        							if ((position += direction) == 0) {
-        								i = (i + 1) % statements.length;
-        								
-        								statement = statements[i];
-        								
-        								direction = 1;
-        								
-        								text.html("");
-        								
-        								delay = emptyPauseDelay;
-        							} else if (direction > 0 && position >= statement.length) {
-        								direction = -1;
-        								
-        								position--;
-        								
-        								delay = pauseDelay;
-        							} else {
-        								caret.classed("active", true);
-        							}
-        						}
-        					} else {
-        						text.html(text.html().substring(0, position));
-        						
-        						screwupCharacter = undefined;
-        						
-        						delay = screwupFixDelay;
-        					}
-        					
-        					$timeout(write, delay || letterDelay);
-        				}
-        				
-        				$timeout(write, startDelay);
-        			}
+					$timeout(function () {
+						
+						
+						element.selectAll("eval").each(function (d, i) {
+							this.innerHTML = eval(this.innerHTML);
+						});
+						
+						var lis = element.selectAll("li");
+	        			
+						if (lis[0].length == 0) {
+							stopOnCompletion = true;
+							
+							statements.push(elements[0].textContent);
+							
+							element.style("min-height", elements[0].offsetHeight + "px");
+						} else {					
+		        			lis.each(function (d, i) {
+		        				var type = this.tagName.toLowerCase();
+		        				
+		        				if (type == "li") {
+		        					statements.push(this.textContent);
+		        				}
+		        			});
+							
+							element.style("min-height", lis[0][0].offsetHeight + "px");
+						}
+						
+	        			elements[0].innerHTML = "";
+	        			
+	        			var text, current;
+						
+						var paragraph = typeof attrs.paragraph !== 'undefined';
+						var currentParagraph;
+						
+						if (paragraph) {
+							text = element.append("div");
+						} else {
+							text = element.append("span");
+						}
+						
+						var timeout;
+						var caret, caretVisible = typeof attrs.caretOnActive === 'undefined';
+						
+						function createCaret(parent) {
+							if (caret) {
+								caret.remove();
+							}
+							
+							caret = parent.append("span").classed("caret", true).html("|").style("display", caretVisible ? "inline" : "none");
+						}
+						
+						function nextParagraph() {
+							currentParagraph = text.append("p");
+							current = currentParagraph.append("span");
+							
+							createCaret(currentParagraph);
+						}
+						
+						function reset() {
+							if (timeout) {
+								$timeout.cancel(timeout);
+							}
+							
+							text.html("");
+							
+							if (paragraph) {
+								nextParagraph();
+							} else {
+								current = text;
+								
+			        			createCaret(element);
+							}
+						}
+						
+						reset();
+						
+						if (typeof attrs.noCaret !== 'undefined') {
+							caret.style("display", "none");
+							
+							caretVisible = false;
+						} else if (attrs.caretVisible) {
+							scope.$watch(function () {
+								return scope.$eval(attrs.caretVisible);
+							}, function (value, oldValue) {
+								caret.style("display", value ? "inline" : "none");
+								
+								caretVisible = value;
+							});
+						}
+						
+						function activate() {
+		        			if (statements.length > 0) {
+		        				var i = 0;
+		        				var position = 0;
+		        				var statement = statements[i];
+		        				var direction = 1;
+		        				
+		        				var letterDelay = parseFloat(attrs.letterDelay) || 60;
+		        				var pauseDelay = parseFloat(attrs.pauseDelay) || 2000;
+		        				var paragraphDelay = parseFloat(attrs.paragraphDelay) || letterDelay;
+		        				var emptyPauseDelay = parseFloat(attrs.emptyPauseDelay) || 1000;
+		        				var startDelay = parseFloat(attrs.startDelay) || 0;
+		        				var screwupFixDelay = parseFloat(attrs.screwupFixDelay) || 200;
+		        				var screwupChance = parseFloat(attrs.screwupChance) || 20;
+		        				
+		        				var screwups = typeof attrs.screwups !== 'undefined';
+		        				
+		        				var screwupCharacter;
+		        				
+								function completed() {
+									if (attrs.onCompletion) {
+										scope.$eval(attrs.onCompletion);
+									}
+									if (typeof attrs.caretOnActive !== 'undefined') {
+										caretVisible = false;
+										
+										caret.style("display", "none");
+									}
+								}
+								
+								if (typeof attrs.caretOnActive !== 'undefined') {
+									caretVisible = true;
+									
+									caret.style("display", "inline");
+								}
+								
+		        				function write(delay) {
+									// if a screwup character was typed then remove it before continuing on.
+		        					if (!screwupCharacter) {
+		        						if (direction > 0) {
+		        							if (screwups && Math.floor(Math.random() * screwupChance) == 0) {
+		        								var characters = adjacentCharacters[statement[position]];
+		        								
+		        								if (characters) {
+		        									screwupCharacter = characters[Math.floor(Math.random() * characters.length)];
+		        									
+		        									delay = screwupFixDelay;
+		        								}
+		        							}
+		        							
+		        							current.html(current.html() + (screwupCharacter || statement[position]));
+		        						} else {
+		        							current.html(current.html().substring(0, position));
+		        						}
+		        						
+		        						caret.classed("active", false);
+		        						
+										// if a screwup character was typed then dont update any of the variables until its removed.
+		        						if (!screwupCharacter) {
+		        							if ((position += direction) == 0) {
+		        								i = (i + 1) % statements.length;
+		        								
+		        								statement = statements[i];
+		        								
+		        								direction = 1;
+		        								
+		        								current.html("");
+		        								
+		        								delay = emptyPauseDelay;
+		        							} else if (direction > 0 && position >= statement.length) {
+												
+												if (paragraph) {
+													position = 0;
+													
+													if (++i < statements.length) {
+														statement = statements[i];
+														
+														nextParagraph();
+														
+														delay = paragraphDelay;
+													} else {
+														completed();
+														
+														return;
+													}
+												} else {
+													completed();
+													
+													if (stopOnCompletion) {
+														return;
+													} else {
+				        								direction = -1;
+				        								
+				        								position--;
+				        								
+				        								delay = pauseDelay;
+													}
+												}
+		        							} else {
+		        								caret.classed("active", true);
+		        							}
+		        						}
+		        					} else {
+		        						current.html(current.html().substring(0, position));
+		        						
+		        						screwupCharacter = undefined;
+		        						
+		        						delay = screwupFixDelay;
+		        					}
+		        					
+		        					timeout = $timeout(write, delay || letterDelay);
+		        				}
+		        				
+								if (statement.length > 0) {
+			        				timeout = $timeout(write, startDelay);
+								}
+		        			}
+						}
+						
+						if (attrs.activateOn) {
+							scope.$watch(function () {
+								return scope.$eval(attrs.activateOn);
+							}, function (value, oldValue) {
+								if (value) {
+									activate();
+								} else if (!attrs.deactivateOn) {
+									reset();
+								}
+							});
+						} else {
+							activate();
+						}
+						
+						if (attrs.deactivateOn) {
+							scope.$watch(function () {
+								return scope.$eval(attrs.deactivateOn);
+							}, function (value, oldValue) {
+								if (value) {
+									reset();
+								}
+							});
+						}
+					});
         		}
         	};
         }]).provider('typableConfig', function() {
